@@ -1,0 +1,5 @@
+feedparser==6.0.11
+requests==2.31.0
+schedule==1.2.1
+deep-translator==1.11.4
+pyTelegramBotAPI==4.18.0
