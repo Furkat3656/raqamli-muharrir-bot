@@ -29,7 +29,7 @@ CHANNEL_ID = "@raqamlimuharrir"             # Kanal username yoki -100xxxxxxxxxx
 OPENWEATHER_API_KEY = "WEATHER_API_KEY"     # openweathermap.org da bepul ro'yxatdan o'ting
 CITY = "Tashkent"                           # Ob-havo qaysi shahar uchun
 
-POSTS_PER_DAY = 7                           # Kuniga nechta yangilik (5-10)
+POSTS_PER_DAY = 15                          # Kuniga nechta yangilik (15 ta)
 CHANNEL_USERNAME = "@raqamlimuharrir"       # Post tagida ko'rinadigan kanal nomi
 
 # ============================================================
@@ -77,7 +77,6 @@ POSTED_FILE = "posted_ids.json"
 
 
 def load_posted():
-    """Yuborilgan postlar ID larini yuklash"""
     if os.path.exists(POSTED_FILE):
         with open(POSTED_FILE, 'r') as f:
             return set(json.load(f))
@@ -85,17 +84,15 @@ def load_posted():
 
 
 def save_posted(posted: set):
-    """Yuborilgan postlarni saqlash (faqat oxirgi 1000 ta)"""
     with open(POSTED_FILE, 'w') as f:
         json.dump(list(posted)[-1000:], f)
 
 
 def safe_translate(text: str) -> str:
-    """Matnni o'zbek tiliga tarjima qilish"""
     try:
         if not text or len(text.strip()) < 5:
             return text
-        text = text[:800]  # Uzun matnni qisqartirish
+        text = text[:800]
         translated = translator.translate(text)
         return translated if translated else text
     except Exception as e:
@@ -104,7 +101,6 @@ def safe_translate(text: str) -> str:
 
 
 def get_fresh_news():
-    """Barcha manbalardan yangi yangiliklar olish"""
     posted = load_posted()
     all_news = []
 
@@ -115,7 +111,6 @@ def get_fresh_news():
                 entry_id = entry.get('id') or entry.get('link', '')
                 if entry_id and entry_id not in posted:
                     summary = entry.get('summary', '') or entry.get('description', '')
-                    # HTML teglarini tozalash
                     import re
                     summary = re.sub(r'<[^>]+>', '', summary)[:400]
 
@@ -136,7 +131,6 @@ def get_fresh_news():
 
 
 def _get_image_from_entry(entry):
-    """Yangilikdan rasm URL ini olish"""
     try:
         if hasattr(entry, 'media_content') and entry.media_content:
             return entry.media_content[0].get('url')
@@ -150,7 +144,6 @@ def _get_image_from_entry(entry):
 
 
 def get_currency_rates():
-    """Markaziy bank valyuta kurslarini olish"""
     try:
         url = "https://cbu.uz/uz/arkhiv-kursov-valyut/json/"
         r = requests.get(url, timeout=10)
@@ -166,7 +159,6 @@ def get_currency_rates():
 
 
 def get_weather():
-    """Toshkent ob-havo ma'lumotlarini olish"""
     try:
         url = (
             f"http://api.openweathermap.org/data/2.5/weather"
@@ -176,17 +168,12 @@ def get_weather():
         data = r.json()
         if data.get('cod') != 200:
             return None
-        temp = data['main']['temp']
-        feels = data['main']['feels_like']
-        desc = data['weather'][0]['description']
-        humidity = data['main']['humidity']
-        wind = data['wind']['speed']
         return {
-            "temp": round(temp),
-            "feels": round(feels),
-            "desc": desc,
-            "humidity": humidity,
-            "wind": wind,
+            "temp": round(data['main']['temp']),
+            "feels": round(data['main']['feels_like']),
+            "desc": data['weather'][0]['description'],
+            "humidity": data['main']['humidity'],
+            "wind": data['wind']['speed'],
         }
     except Exception as e:
         logger.error(f"Ob-havo xatosi: {e}")
@@ -198,28 +185,20 @@ def get_weather():
 # ============================================================
 
 def post_news():
-    """Yangilik postini yuborish"""
     news_list, posted = get_fresh_news()
 
     if not news_list:
         logger.info("Yangi yangilik topilmadi, keyingisini kutish...")
         return
 
-    # Tasodifiy yangilik tanlash
     news = random.choice(news_list)
-
-    # Tarjima
     title_uz = safe_translate(news['title'])
     summary_uz = safe_translate(news['summary']) if news['summary'] else ""
 
-    # Post matni formatlash
     now = datetime.now().strftime('%H:%M • %d.%m.%Y')
-    text = (
-        f"{news['emoji']} <b>{title_uz}</b>\n\n"
-    )
+    text = f"{news['emoji']} <b>{title_uz}</b>\n\n"
     if summary_uz:
         text += f"{summary_uz}\n\n"
-
     text += (
         f"🔗 <a href='{news['link']}'>Batafsil o'qish →</a>\n\n"
         f"#{news['cat']} | 🕐 {now}\n"
@@ -227,46 +206,32 @@ def post_news():
     )
 
     try:
-        # Rasm bilan yoki rasmsiz yuborish
         if news.get('image'):
             try:
-                bot.send_photo(
-                    CHANNEL_ID,
-                    photo=news['image'],
-                    caption=text,
-                    parse_mode='HTML'
-                )
+                bot.send_photo(CHANNEL_ID, photo=news['image'], caption=text, parse_mode='HTML')
             except:
-                # Rasm yuklanmasa, odatiy matn
-                bot.send_message(CHANNEL_ID, text, parse_mode='HTML',
-                                 disable_web_page_preview=False)
+                bot.send_message(CHANNEL_ID, text, parse_mode='HTML', disable_web_page_preview=False)
         else:
-            bot.send_message(CHANNEL_ID, text, parse_mode='HTML',
-                             disable_web_page_preview=False)
+            bot.send_message(CHANNEL_ID, text, parse_mode='HTML', disable_web_page_preview=False)
 
         posted.add(news['id'])
         save_posted(posted)
         logger.info(f"✅ Post yuborildi: {news['title'][:60]}")
-
     except Exception as e:
         logger.error(f"❌ Post yuborishda xato: {e}")
 
 
 def post_currency():
-    """Valyuta kurslari postini yuborish"""
     rates = get_currency_rates()
     if not rates:
-        logger.warning("Valyuta ma'lumotlari olinmadi")
         return
 
     date_str = datetime.now().strftime('%d.%m.%Y')
     text = f"💱 <b>Bugungi valyuta kurslari</b>\n📅 {date_str}\n\n"
-
     flags = {'USD': '🇺🇸', 'EUR': '🇪🇺', 'RUB': '🇷🇺', 'GBP': '🇬🇧', 'CNY': '🇨🇳'}
     for ccy, flag in flags.items():
         if ccy in rates:
             text += f"{flag} 1 {ccy} = <b>{rates[ccy]:,.2f} so'm</b>\n"
-
     text += f"\n🏦 Manba: Markaziy Bank\n📢 {CHANNEL_USERNAME}"
 
     try:
@@ -277,15 +242,11 @@ def post_currency():
 
 
 def post_weather():
-    """Ob-havo postini yuborish"""
     w = get_weather()
     if not w:
-        logger.warning("Ob-havo ma'lumoti olinmadi")
         return
 
     date_str = datetime.now().strftime('%d.%m.%Y')
-
-    # Haroratga qarab emoji
     if w['temp'] >= 30:
         temp_emoji = "🔥"
     elif w['temp'] >= 20:
@@ -319,14 +280,18 @@ def post_weather():
 # ============================================================
 
 def setup_schedule():
-    """Kunlik jadval"""
-
     # Ertalabki paket (valyuta + ob-havo)
     schedule.every().day.at("08:00").do(post_currency)
     schedule.every().day.at("08:05").do(post_weather)
 
-    # Yangiliklar vaqtlari (7 ta post)
-    news_times = ["09:00", "10:30", "12:00", "14:00", "16:00", "18:30", "21:00"]
+    # Yangiliklar vaqtlari (15 ta post) — har ~1 soatda
+    news_times = [
+        "08:30", "09:30", "10:30", "11:30",
+        "12:30", "13:30", "14:30", "15:30",
+        "16:30", "17:30", "18:30", "19:30",
+        "20:30", "21:30", "22:30"
+    ]
+
     for t in news_times[:POSTS_PER_DAY]:
         schedule.every().day.at(t).do(post_news)
 
@@ -334,7 +299,7 @@ def setup_schedule():
         f"📅 Jadval tayyor:\n"
         f"   💱 Valyuta: 08:00\n"
         f"   🌤 Ob-havo: 08:05\n"
-        f"   📰 Yangiliklar: {', '.join(news_times[:POSTS_PER_DAY])}"
+        f"   📰 Yangiliklar ({POSTS_PER_DAY} ta): {', '.join(news_times[:POSTS_PER_DAY])}"
     )
 
 
@@ -350,7 +315,6 @@ if __name__ == "__main__":
 
     setup_schedule()
 
-    # Dastlabki test postlar
     logger.info("📤 Birinchi test postlar yuborilmoqda...")
     post_currency()
     time.sleep(3)
@@ -360,7 +324,6 @@ if __name__ == "__main__":
 
     logger.info("✅ Test postlar yuborildi. Bot ishlayapti...")
 
-    # Asosiy loop
     while True:
         schedule.run_pending()
         time.sleep(60)
